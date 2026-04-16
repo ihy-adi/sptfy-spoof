@@ -71,6 +71,9 @@ export async function streamRoutes(fastify: FastifyInstance) {
         const raw = await runYtDlp([
           "-f", "bestaudio[ext=m4a]/bestaudio/best",
           "--no-playlist",
+          "--js-runtimes", "nodejs",
+          // Use iOS client — bypasses bot detection on datacenter IPs
+          "--extractor-args", "youtube:player_client=ios,android_vr",
           "-j",
           url,
         ]);
