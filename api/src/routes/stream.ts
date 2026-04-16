@@ -89,15 +89,32 @@ export async function streamRoutes(fastify: FastifyInstance) {
             : "youtube:player_client=ios,android_vr",
         ];
 
-        const raw = await runYtDlp([
+        const baseArgs = [
           "-f", "bestaudio[ext=m4a]/bestaudio/best",
           "--no-playlist",
-          "--js-runtimes", "node",   // correct runtime name (not nodejs)
-          ...clientArgs,
-          ...cookiesArgs,
+          "--no-warnings",
+          "--no-cache-dir",
           "-j",
           url,
-        ]);
+        ];
+
+        // Try preferred client first; fall back to mweb if it fails
+        let raw: string;
+        try {
+          raw = await runYtDlp([
+            "--js-runtimes", "node",
+            ...clientArgs,
+            ...cookiesArgs,
+            ...baseArgs,
+          ]);
+        } catch {
+          // Fallback: mweb client, no JS runtime requirement
+          raw = await runYtDlp([
+            "--extractor-args", "youtube:player_client=mweb",
+            ...cookiesArgs,
+            ...baseArgs,
+          ]);
+        }
 
         const info: YtDlpJson = JSON.parse(raw);
 
