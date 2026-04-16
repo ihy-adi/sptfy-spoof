@@ -17,6 +17,8 @@ export interface StreamInfo {
 export interface SearchResponse {
   results: Song[];
   nextPage: string | null;
+  prevPage: string | null;
+  page: number;
 }
 
 export type PlaybackState = "idle" | "loading" | "playing" | "paused" | "error";

@@ -3,6 +3,13 @@ import type { PlaybackState, Song, LoopMode } from "@/types";
 import { api } from "@/lib/api";
 import { audioService } from "@/lib/audioService";
 import type { AVPlaybackStatus } from "expo-av";
+import { streamQueryKey } from "@/hooks/useSearch";
+
+// Access the QueryClient outside of React — set once in _layout.tsx
+let _queryClient: import("@tanstack/react-query").QueryClient | null = null;
+export function setQueryClient(qc: import("@tanstack/react-query").QueryClient) {
+  _queryClient = qc;
+}
 
 interface PlayerStore {
   // State
@@ -19,6 +26,7 @@ interface PlayerStore {
 
   // Actions
   playSong: (song: Song) => Promise<void>;
+  addToQueue: (song: Song) => void;
   togglePlayPause: () => Promise<void>;
   seekTo: (positionMs: number) => Promise<void>;
   playNext: () => Promise<void>;
@@ -58,8 +66,12 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
     playSong: async (song: Song) => {
       set({ playbackState: "loading", currentSong: song, positionMs: 0 });
       try {
-        const streamInfo = await api.getStream(song.youtubeId);
-        // loop-one: tell expo-av to loop natively (no didJustFinish fires)
+        // Check TanStack Query cache first (pre-fetched by useSearch)
+        const cached = _queryClient?.getQueryData<import("@/types").StreamInfo>(
+          streamQueryKey(song.youtubeId)
+        );
+        const streamInfo = cached ?? (await api.getStream(song.youtubeId));
+
         await audioService.loadAndPlay(streamInfo.streamUrl, get().loopMode === "one");
         set({
           streamUrl: streamInfo.streamUrl,
@@ -70,6 +82,14 @@ export const usePlayerStore = create<PlayerStore>((set, get) => {
         console.error("playSong error:", err);
         set({ playbackState: "error" });
       }
+    },
+
+    addToQueue: (song: Song) => {
+      set((s) => {
+        const alreadyInQueue = s.queue.some((q) => q.youtubeId === song.youtubeId);
+        if (alreadyInQueue) return s;
+        return { queue: [...s.queue, song] };
+      });
     },
 
     togglePlayPause: async () => {

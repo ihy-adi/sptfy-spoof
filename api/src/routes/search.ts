@@ -24,14 +24,16 @@ function runYtDlpSearch(query: string, page: number): Promise<string> {
       ? ["--extractor-args", "youtube:player_client=web,tv_embedded"]
       : ["--extractor-args", "youtube:player_client=ios,android_vr"];
 
-    // Fetch enough results to cover all pages up to requested page
-    // e.g. page 0 → fetch 10, page 1 → fetch 20, page 2 → fetch 30
-    const fetchCount = (page + 1) * PAGE_SIZE * 2;
+    // Cap at page 3 max to avoid memory spikes on free tier (512MB)
+    const safePage = Math.min(page, 3);
+    // Always fetch from scratch for the requested page — flat-playlist is lightweight
+    const fetchCount = Math.min((safePage + 1) * PAGE_SIZE + PAGE_SIZE, 30);
 
     const args = [
       `ytsearch${fetchCount}:${query}`,
       "--flat-playlist",
       "--no-warnings",
+      "--no-cache-dir",        // don't write cache to disk
       "--js-runtimes", "node",
       ...clientArgs,
       ...cookiesArgs,

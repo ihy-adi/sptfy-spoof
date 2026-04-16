@@ -15,7 +15,7 @@ async function request<T>(path: string): Promise<T> {
 }
 
 export const api = {
-  search(query: string, page = 1): Promise<SearchResponse> {
+  search(query: string, page = 0): Promise<SearchResponse> {
     const params = new URLSearchParams({ q: query, page: String(page) });
     return request<SearchResponse>(`/search?${params}`);
   },

@@ -6,6 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { audioService } from "@/lib/audioService";
 import { useLibraryStore } from "@/stores/libraryStore";
+import { setQueryClient } from "@/stores/playerStore";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -22,6 +23,7 @@ export default function RootLayout() {
   useEffect(() => {
     audioService.configure().catch(console.error);
     loadFavorites();
+    setQueryClient(queryClient);
   }, []);
 
   return (
