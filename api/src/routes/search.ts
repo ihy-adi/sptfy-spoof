@@ -1,8 +1,63 @@
 import type { FastifyInstance } from "fastify";
-import ytsr from "@distube/ytsr";
+import { spawn } from "child_process";
+import { existsSync } from "fs";
 import type { SearchResult, Song } from "../types";
 
-const RESULTS_PER_PAGE = 5;
+const PAGE_SIZE = 5;
+const COOKIES_PATH = "/tmp/yt_cookies.txt";
+
+interface YtDlpFlatEntry {
+  id: string;
+  title: string;
+  channel?: string;
+  uploader?: string;
+  duration?: number;
+  thumbnails?: { url: string; width?: number; height?: number }[];
+  thumbnail?: string;
+  live_status?: string;
+}
+
+function runYtDlpSearch(query: string, page: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const cookiesArgs = existsSync(COOKIES_PATH) ? ["--cookies", COOKIES_PATH] : [];
+    const clientArgs = existsSync(COOKIES_PATH)
+      ? ["--extractor-args", "youtube:player_client=web,tv_embedded"]
+      : ["--extractor-args", "youtube:player_client=ios,android_vr"];
+
+    // Fetch enough results to cover all pages up to requested page
+    // e.g. page 0 → fetch 10, page 1 → fetch 20, page 2 → fetch 30
+    const fetchCount = (page + 1) * PAGE_SIZE * 2;
+
+    const args = [
+      `ytsearch${fetchCount}:${query}`,
+      "--flat-playlist",
+      "--no-warnings",
+      "--js-runtimes", "node",
+      ...clientArgs,
+      ...cookiesArgs,
+      "-j",
+    ];
+
+    const proc = spawn("yt-dlp", args);
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (d: { toString(): string }) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d: { toString(): string }) => { stderr += d.toString(); });
+
+    proc.on("close", (code: number | null) => {
+      if (code === 0 || stdout.trim().length > 0) {
+        resolve(stdout.trim());
+      } else {
+        reject(new Error(`yt-dlp search failed (${code}): ${stderr.trim()}`));
+      }
+    });
+
+    proc.on("error", (err: Error) => {
+      reject(new Error(`yt-dlp not found: ${err.message}`));
+    });
+  });
+}
 
 export async function searchRoutes(fastify: FastifyInstance) {
   fastify.get<{
@@ -23,44 +78,52 @@ export async function searchRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const { q } = request.query;
+      const page = Math.max(0, parseInt(request.query.page ?? "0", 10));
 
       try {
-        // Fetch enough to fill 5 non-live, non-upcoming videos
-        const raw = await ytsr(q, { limit: 20 });
+        const raw = await runYtDlpSearch(q, page);
+        const lines = raw.split("\n").filter((l) => l.trim().startsWith("{"));
 
-        const videos: Song[] = [];
-        for (const item of raw.items) {
-          if (item.type !== "video") continue;
-          if (item.isLive || item.isUpcoming) continue;
-          if (videos.length >= RESULTS_PER_PAGE) break;
+        // Parse all valid video entries
+        const allVideos: Song[] = [];
+        for (const line of lines) {
+          try {
+            const entry: YtDlpFlatEntry = JSON.parse(line);
+            if (!entry.id || !entry.title) continue;
+            if (entry.live_status === "is_live" || entry.live_status === "is_upcoming") continue;
 
-          videos.push({
-            youtubeId: item.id,
-            title: item.name,
-            channel: item.author?.name ?? "Unknown",
-            durationS: parseDuration(item.duration ?? "0:00"),
-            thumbnail:
-              item.thumbnail ??
-              `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg`,
-          });
+            const thumbnail =
+              entry.thumbnail ??
+              entry.thumbnails?.sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0]?.url ??
+              `https://i.ytimg.com/vi/${entry.id}/hqdefault.jpg`;
+
+            allVideos.push({
+              youtubeId: entry.id,
+              title: entry.title,
+              channel: entry.channel ?? entry.uploader ?? "Unknown",
+              durationS: Math.round(entry.duration ?? 0),
+              thumbnail,
+            });
+          } catch {
+            // skip malformed line
+          }
         }
 
-        const result: SearchResult = {
-          results: videos,
-          nextPage: null, // pagination handled via fresh queries for Phase 1
-        };
+        // Slice to the requested page
+        const start = page * PAGE_SIZE;
+        const pageResults = allVideos.slice(start, start + PAGE_SIZE);
+        const hasNextPage = allVideos.length > start + PAGE_SIZE;
 
-        return reply.send(result);
+        return reply.send({
+          results: pageResults,
+          nextPage: hasNextPage ? String(page + 1) : null,
+          prevPage: page > 0 ? String(page - 1) : null,
+          page,
+        } satisfies SearchResult & { prevPage: string | null; page: number });
       } catch (err) {
         fastify.log.error(err);
         return reply.status(500).send({ error: "Search failed" });
       }
     }
   );
-}
-
-function parseDuration(raw: string): number {
-  if (!raw) return 0;
-  const parts = raw.split(":").map(Number).reverse();
-  return (parts[2] ?? 0) * 3600 + (parts[1] ?? 0) * 60 + (parts[0] ?? 0);
 }

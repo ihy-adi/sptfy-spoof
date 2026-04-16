@@ -9,6 +9,8 @@ export interface Song {
 export interface SearchResult {
   results: Song[];
   nextPage: string | null;
+  prevPage: string | null;
+  page: number;
 }
 
 export interface StreamResult {
