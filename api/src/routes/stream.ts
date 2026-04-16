@@ -79,15 +79,21 @@ export async function streamRoutes(fastify: FastifyInstance) {
         // -j: dump JSON (includes direct stream URL + metadata in one call)
         // --no-playlist: never accidentally pull a whole playlist
         ensureCookiesFile();
-        const cookiesArgs = existsSync(COOKIES_PATH)
-          ? ["--cookies", COOKIES_PATH]
-          : [];
+        const hasCookies = existsSync(COOKIES_PATH);
+        const cookiesArgs = hasCookies ? ["--cookies", COOKIES_PATH] : [];
+        // web client supports cookies; ios/android_vr work without cookies on clean IPs
+        const clientArgs = [
+          "--extractor-args",
+          hasCookies
+            ? "youtube:player_client=web,tv_embedded"
+            : "youtube:player_client=ios,android_vr",
+        ];
 
         const raw = await runYtDlp([
           "-f", "bestaudio[ext=m4a]/bestaudio/best",
           "--no-playlist",
-          "--js-runtimes", "nodejs",
-          "--extractor-args", "youtube:player_client=ios,android_vr",
+          "--js-runtimes", "node",   // correct runtime name (not nodejs)
+          ...clientArgs,
           ...cookiesArgs,
           "-j",
           url,
