@@ -1,6 +1,6 @@
 FROM node:20-slim
 
-# Install yt-dlp + python3 (yt-dlp dependency) + ffmpeg (optional but useful)
+# Install yt-dlp dependencies + ffmpeg
 RUN apt-get update && apt-get install -y \
     python3 \
     curl \
@@ -14,13 +14,18 @@ RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+
+# Install ALL deps including devDeps (TypeScript + @types/node needed to build)
+RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
 
-# Build TypeScript
-RUN npm install -g typescript && tsc
+# Build TypeScript using local tsc (from devDeps)
+RUN npx tsc
+
+# Prune devDeps — production image only needs dist/ + node_modules prod deps
+RUN npm prune --omit=dev
 
 EXPOSE 3000
 

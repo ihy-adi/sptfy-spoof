@@ -22,10 +22,10 @@ function runYtDlp(args: string[]): Promise<string> {
     let stdout = "";
     let stderr = "";
 
-    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-    proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    proc.stdout.on("data", (d: { toString(): string }) => { stdout += d.toString(); });
+    proc.stderr.on("data", (d: { toString(): string }) => { stderr += d.toString(); });
 
-    proc.on("close", (code) => {
+    proc.on("close", (code: number | null) => {
       if (code === 0) {
         resolve(stdout.trim());
       } else {
@@ -33,7 +33,7 @@ function runYtDlp(args: string[]): Promise<string> {
       }
     });
 
-    proc.on("error", (err) => {
+    proc.on("error", (err: Error) => {
       reject(new Error(`yt-dlp not found. Run: brew install yt-dlp\n${err.message}`));
     });
   });
