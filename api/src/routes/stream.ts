@@ -1,6 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { spawn } from "child_process";
+import { writeFileSync, existsSync } from "fs";
 import type { StreamResult } from "../types";
+
+// Write YT_COOKIES env var to a temp file once at startup (for bot detection bypass)
+const COOKIES_PATH = "/tmp/yt_cookies.txt";
+function ensureCookiesFile() {
+  const cookies = process.env.YT_COOKIES;
+  if (cookies && !existsSync(COOKIES_PATH)) {
+    writeFileSync(COOKIES_PATH, cookies, "utf8");
+  }
+}
 
 // Brief in-memory cache — yt-dlp URLs last ~6h from YouTube
 const streamCache = new Map<string, { data: StreamResult; fetchedAt: number }>();
@@ -68,12 +78,17 @@ export async function streamRoutes(fastify: FastifyInstance) {
         // -f: prefer m4a (iOS native), fall back to any audio-only, then best
         // -j: dump JSON (includes direct stream URL + metadata in one call)
         // --no-playlist: never accidentally pull a whole playlist
+        ensureCookiesFile();
+        const cookiesArgs = existsSync(COOKIES_PATH)
+          ? ["--cookies", COOKIES_PATH]
+          : [];
+
         const raw = await runYtDlp([
           "-f", "bestaudio[ext=m4a]/bestaudio/best",
           "--no-playlist",
           "--js-runtimes", "nodejs",
-          // Use iOS client — bypasses bot detection on datacenter IPs
           "--extractor-args", "youtube:player_client=ios,android_vr",
+          ...cookiesArgs,
           "-j",
           url,
         ]);
